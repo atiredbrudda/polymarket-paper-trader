@@ -700,3 +700,15 @@ def watch(ctx: click.Context, slugs_or_ids: tuple[str, ...], outcomes: tuple[str
         sys.exit(1)
     finally:
         engine.close()
+
+
+# ---------------------------------------------------------------------------
+# MCP server
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+def mcp() -> None:
+    """Start MCP server (stdio transport) for AI agent integration."""
+    from pm_sim.mcp_server import main as mcp_main
+    mcp_main()
