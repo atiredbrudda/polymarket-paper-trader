@@ -524,6 +524,37 @@ class TestWatchPrices:
             initialized_engine.watch_prices(["btc"], ["maybe"])
 
 
+class TestCheckOrdersRejection:
+    def test_unfillable_order_gets_rejected(self, initialized_engine: Engine):
+        """An order with amount below minimum should be rejected, not retried forever."""
+        _mock_api(initialized_engine)
+        # Bypass engine validation by inserting directly into orders table
+        from pm_sim.orders import create_order, get_pending_orders
+
+        order = create_order(
+            initialized_engine.db.conn,
+            market_slug="btc",
+            market_condition_id="0x123",
+            outcome="yes",
+            side="buy",
+            amount=0.10,  # Below $1 minimum — will always fail
+            limit_price=0.99,  # High limit so should_fill returns True
+        )
+        assert len(get_pending_orders(initialized_engine.db.conn)) == 1
+
+        results = initialized_engine.check_orders()
+
+        # Order should be rejected, not still pending
+        assert len(results) >= 1
+        rejected = [r for r in results if r["action"] == "rejected"]
+        assert len(rejected) == 1
+        assert rejected[0]["order"]["status"] == "rejected"
+        assert "Minimum" in rejected[0]["reason"]
+
+        # No pending orders left
+        assert len(get_pending_orders(initialized_engine.db.conn)) == 0
+
+
 class TestLimitOrderValidation:
     def test_gtd_without_expiry_rejected(self, initialized_engine: Engine):
         _mock_api(initialized_engine)

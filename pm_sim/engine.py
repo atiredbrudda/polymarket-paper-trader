@@ -30,6 +30,7 @@ from pm_sim.orders import (
     get_pending_orders,
     init_orders_schema,
     mark_filled,
+    reject_order,
     should_fill,
 )
 from pm_sim.orderbook import simulate_buy_fill, simulate_sell_fill
@@ -444,6 +445,12 @@ class Engine:
         for o in expired:
             results.append({"order": _order_to_dict(o), "action": "expired"})
 
+        # Permanent failure types that should reject an order
+        _permanent = (
+            OrderRejectedError, InsufficientBalanceError,
+            InvalidOutcomeError, MarketClosedError, NoPositionError,
+        )
+
         # Check pending orders against live midpoints
         pending = get_pending_orders(self.db.conn)
         for order in pending:
@@ -454,11 +461,11 @@ class Engine:
 
                 if should_fill(order, mid):
                     if order.side == "buy":
-                        trade_result = self.buy(
+                        self.buy(
                             order.market_slug, order.outcome, order.amount
                         )
                     else:
-                        trade_result = self.sell(
+                        self.sell(
                             order.market_slug, order.outcome, order.amount
                         )
                     updated = mark_filled(self.db.conn, order.id)
@@ -466,8 +473,16 @@ class Engine:
                         "order": _order_to_dict(updated),
                         "action": "filled",
                     })
+            except _permanent as e:
+                # Permanent failure — mark rejected so it's not retried
+                updated = reject_order(self.db.conn, order.id, str(e))
+                results.append({
+                    "order": _order_to_dict(updated),
+                    "action": "rejected",
+                    "reason": str(e),
+                })
             except Exception:
-                continue  # Skip orders that fail (market gone, no liquidity, etc.)
+                continue  # Transient errors (network, API) — retry next check
 
         return results
 

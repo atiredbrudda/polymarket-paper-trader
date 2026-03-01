@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS limit_orders (
     limit_price REAL NOT NULL,
     order_type TEXT NOT NULL CHECK (order_type IN ('gtc', 'gtd')),
     expires_at TEXT,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'filled', 'cancelled', 'expired')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'filled', 'cancelled', 'expired', 'rejected')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     filled_at TEXT
 );
@@ -113,6 +113,16 @@ def mark_filled(conn: sqlite3.Connection, order_id: int) -> LimitOrder:
     """Mark an order as filled."""
     conn.execute(
         "UPDATE limit_orders SET status = 'filled', filled_at = datetime('now') WHERE id = ?",
+        (order_id,),
+    )
+    conn.commit()
+    return _get_order(conn, order_id)
+
+
+def reject_order(conn: sqlite3.Connection, order_id: int, reason: str = "") -> LimitOrder:
+    """Mark an order as permanently rejected (unfillable)."""
+    conn.execute(
+        "UPDATE limit_orders SET status = 'rejected' WHERE id = ?",
         (order_id,),
     )
     conn.commit()
