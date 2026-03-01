@@ -438,6 +438,59 @@ def resolve_all(account: str = "default") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Backtesting tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def backtest(
+    data_path: str,
+    strategy_path: str,
+    balance: float = 10_000.0,
+    spread: float = 0.02,
+    depth: float = 500.0,
+) -> str:
+    """Run a backtest with historical price data.
+
+    data_path: path to CSV or JSON file with historical prices
+    strategy_path: dotted Python path to strategy function (e.g. "mymod.my_strategy")
+    balance: starting balance (USD)
+    spread: synthetic order book spread
+    depth: synthetic order book depth per level
+    """
+    try:
+        import importlib
+        from pathlib import Path as P
+
+        from pm_sim.backtest import (
+            load_snapshots_csv,
+            load_snapshots_json,
+            run_backtest,
+        )
+
+        data = P(data_path)
+        if data.suffix == ".json":
+            snapshots = load_snapshots_json(data)
+        else:
+            snapshots = load_snapshots_csv(data)
+
+        # Import strategy
+        parts = strategy_path.rsplit(".", 1)
+        if len(parts) != 2:
+            return _err("strategy_path must be module.function", "invalid_strategy")
+        mod = importlib.import_module(parts[0])
+        strategy_fn = getattr(mod, parts[1])
+
+        from dataclasses import asdict
+        result = run_backtest(
+            snapshots, strategy_fn, strategy_path, balance, spread, depth,
+        )
+        return _ok(asdict(result))
+    except Exception as e:
+        return _err(str(e), type(e).__name__)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
