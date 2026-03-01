@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS limit_orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     market_slug TEXT NOT NULL,
     market_condition_id TEXT NOT NULL,
-    outcome TEXT NOT NULL CHECK (outcome IN ('yes', 'no')),
+    outcome TEXT NOT NULL CHECK (length(outcome) > 0),
     side TEXT NOT NULL CHECK (side IN ('buy', 'sell')),
     amount REAL NOT NULL,
     limit_price REAL NOT NULL,

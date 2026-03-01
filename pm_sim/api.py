@@ -231,9 +231,7 @@ class PolymarketClient:
         - Fee rate is cached.
         """
         market = self.get_market(slug_or_id)
-        token_id = (
-            market.yes_token_id if outcome == "yes" else market.no_token_id
-        )
+        token_id = market.get_token_id(outcome)
         book = self.get_order_book(token_id)
         fee_rate = self.get_fee_rate(token_id)
         return market, book, fee_rate

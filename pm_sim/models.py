@@ -66,8 +66,11 @@ class NoPositionError(SimError):
 class InvalidOutcomeError(SimError):
     code = "INVALID_OUTCOME"
 
-    def __init__(self, outcome: str) -> None:
-        super().__init__(f"Invalid outcome: {outcome!r}. Must be 'yes' or 'no'.")
+    def __init__(self, outcome: str, valid: list[str] | None = None) -> None:
+        if valid:
+            super().__init__(f"Invalid outcome: {outcome!r}. Must be one of {valid}.")
+        else:
+            super().__init__(f"Invalid outcome: {outcome!r}.")
         self.outcome = outcome
 
 
@@ -121,21 +124,23 @@ class Market:
     fee_rate_bps: int = 0
     tick_size: float = 0.01
 
+    def get_token_id(self, outcome: str) -> str:
+        """Token ID for any outcome (case-insensitive)."""
+        outcome_lower = outcome.lower()
+        for token in self.tokens:
+            if token.get("outcome", "").lower() == outcome_lower:
+                return token["token_id"]
+        raise ValueError(f"No token found for outcome {outcome!r}")
+
     @property
     def yes_token_id(self) -> str:
         """Token ID for the YES outcome."""
-        for token in self.tokens:
-            if token.get("outcome", "").lower() == "yes":
-                return token["token_id"]
-        raise ValueError("No YES token found")
+        return self.get_token_id("yes")
 
     @property
     def no_token_id(self) -> str:
         """Token ID for the NO outcome."""
-        for token in self.tokens:
-            if token.get("outcome", "").lower() == "no":
-                return token["token_id"]
-        raise ValueError("No NO token found")
+        return self.get_token_id("no")
 
     @property
     def yes_price(self) -> float:

@@ -74,9 +74,19 @@ class Engine:
         return self.get_account()
 
     @staticmethod
-    def _validate_outcome(outcome: str) -> str:
+    def _normalize_outcome(outcome: str) -> str:
+        """Normalize outcome string (lowercase, strip whitespace)."""
+        return outcome.lower().strip()
+
+    @staticmethod
+    def _validate_outcome(outcome: str, market=None) -> str:
+        """Validate and normalize outcome. If market given, check it exists."""
         outcome = outcome.lower().strip()
-        if outcome not in ("yes", "no"):
+        if market is not None:
+            valid = [o.lower() for o in market.outcomes]
+            if outcome not in valid:
+                raise InvalidOutcomeError(outcome, valid)
+        elif outcome not in ("yes", "no"):
             raise InvalidOutcomeError(outcome)
         return outcome
 
@@ -224,9 +234,7 @@ class Engine:
             raise MarketClosedError(market.slug)
 
         # Fetch live book and fee rate
-        token_id = (
-            market.yes_token_id if outcome == "yes" else market.no_token_id
-        )
+        token_id = market.get_token_id(outcome)
         book = self.api.get_order_book(token_id)
         fee_rate_bps = self.api.get_fee_rate(token_id)
 
@@ -341,9 +349,7 @@ class Engine:
     def _get_token_id_for_position(self, pos: Position) -> str:
         """Resolve a position to its token_id for price lookups."""
         market = self.api.get_market(pos.market_slug)
-        if pos.outcome == "yes":
-            return market.yes_token_id
-        return market.no_token_id
+        return market.get_token_id(pos.outcome)
 
     # ------------------------------------------------------------------
     # Balance
@@ -438,10 +444,7 @@ class Engine:
         for order in pending:
             try:
                 market = self.api.get_market(order.market_slug)
-                token_id = (
-                    market.yes_token_id if order.outcome == "yes"
-                    else market.no_token_id
-                )
+                token_id = market.get_token_id(order.outcome)
                 mid = self.api.get_midpoint(token_id)
 
                 if should_fill(order, mid):
@@ -478,10 +481,7 @@ class Engine:
                 market = self.api.get_market(slug)
                 for outcome in outcomes:
                     outcome = outcome.lower()
-                    token_id = (
-                        market.yes_token_id if outcome == "yes"
-                        else market.no_token_id
-                    )
+                    token_id = market.get_token_id(outcome)
                     mid = self.api.get_midpoint(token_id)
                     results.append({
                         "market_slug": market.slug,

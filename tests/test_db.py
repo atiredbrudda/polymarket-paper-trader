@@ -566,7 +566,7 @@ class TestConstraints:
             )
 
     def test_trade_outcome_constraint(self, db: Database) -> None:
-        """Outcome must be 'yes' or 'no'."""
+        """Outcome must be non-empty."""
         with pytest.raises(Exception):
             db.conn.execute(
                 """\
@@ -574,7 +574,7 @@ class TestConstraints:
                     market_condition_id, market_slug, market_question,
                     outcome, side, order_type,
                     avg_price, amount_usd, shares, fee_rate_bps
-                ) VALUES ('0x1', 's', 'q', 'maybe', 'buy', 'fok', 0.5, 10, 20, 0)
+                ) VALUES ('0x1', 's', 'q', '', 'buy', 'fok', 0.5, 10, 20, 0)
                 """
             )
 
@@ -605,13 +605,13 @@ class TestConstraints:
             )
 
     def test_position_outcome_constraint(self, db: Database) -> None:
-        """Position outcome must be 'yes' or 'no'."""
+        """Position outcome must be non-empty."""
         with pytest.raises(Exception):
             db.conn.execute(
                 """\
                 INSERT INTO positions (
                     market_condition_id, market_slug, market_question,
                     outcome, shares, avg_entry_price, total_cost
-                ) VALUES ('0x1', 's', 'q', 'maybe', 10, 0.5, 5.0)
+                ) VALUES ('0x1', 's', 'q', '', 10, 0.5, 5.0)
                 """
             )
