@@ -56,6 +56,15 @@ def _err(msg: str, code: str = "error") -> str:
     return json.dumps({"ok": False, "error": msg, "code": code})
 
 
+def _err_from(e: Exception) -> str:
+    """Return an error envelope from an exception, sanitizing internals."""
+    from pm_trader.models import SimError
+
+    if isinstance(e, (SimError, ValueError, TypeError)):
+        return _err(str(e), getattr(e, "code", type(e).__name__))
+    return _err("Internal error", "internal_error")
+
+
 # ---------------------------------------------------------------------------
 # Account tools
 # ---------------------------------------------------------------------------
@@ -75,7 +84,7 @@ def init_account(balance: float = 10_000.0, account: str = "default") -> str:
             "starting_balance": acct.starting_balance,
         })
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 @mcp.tool()
@@ -97,7 +106,7 @@ def reset_account(account: str = "default") -> str:
         engine.reset()
         return _ok({"reset": True})
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 # ---------------------------------------------------------------------------
@@ -105,11 +114,14 @@ def reset_account(account: str = "default") -> str:
 # ---------------------------------------------------------------------------
 
 
+MAX_RESULTS = 100
+
+
 @mcp.tool()
 def search_markets(query: str, limit: int = 10) -> str:
     """Search Polymarket for markets matching a query string."""
     engine = _get_engine()
-    markets = engine.api.search_markets(query, limit=limit)
+    markets = engine.api.search_markets(query, limit=min(limit, MAX_RESULTS))
     return _ok([
         {
             "slug": m.slug,
@@ -130,7 +142,7 @@ def search_markets(query: str, limit: int = 10) -> str:
 def list_markets(limit: int = 20, sort_by: str = "volume") -> str:
     """List active Polymarket markets sorted by volume or liquidity."""
     engine = _get_engine()
-    markets = engine.api.list_markets(limit=limit, sort_by=sort_by)
+    markets = engine.api.list_markets(limit=min(limit, MAX_RESULTS), sort_by=sort_by)
     return _ok([
         {
             "slug": m.slug,
@@ -201,7 +213,7 @@ def watch_prices(
         prices = engine.watch_prices(slug_list, outcome_list)
         return _ok(prices)
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +254,7 @@ def buy(
             },
         })
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 @mcp.tool()
@@ -278,7 +290,7 @@ def sell(
             },
         })
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 # ---------------------------------------------------------------------------
@@ -294,13 +306,14 @@ def portfolio(account: str = "default") -> str:
         positions = engine.get_portfolio()
         return _ok(positions)
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 @mcp.tool()
 def history(limit: int = 50, account: str = "default") -> str:
     """Get recent trade history."""
     try:
+        limit = min(limit, MAX_RESULTS * 10)
         engine = _get_engine(account)
         trades = engine.get_history(limit)
         return _ok([
@@ -318,7 +331,7 @@ def history(limit: int = 50, account: str = "default") -> str:
             for t in trades
         ])
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +365,7 @@ def place_limit_order(
         )
         return _ok(order)
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 @mcp.tool()
@@ -363,7 +376,7 @@ def list_orders(account: str = "default") -> str:
         orders = engine.get_pending_orders()
         return _ok(orders)
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 @mcp.tool()
@@ -376,7 +389,7 @@ def cancel_order(order_id: int, account: str = "default") -> str:
             return _err(f"Order {order_id} not found or not pending", "not_found")
         return _ok(order)
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 @mcp.tool()
@@ -390,7 +403,7 @@ def check_orders(account: str = "default") -> str:
         results = engine.check_orders()
         return _ok(results)
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 # ---------------------------------------------------------------------------
@@ -413,7 +426,7 @@ def stats(account: str = "default") -> str:
         result = compute_stats(trades, acct, positions_value)
         return _ok(result)
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 @mcp.tool()
@@ -443,7 +456,7 @@ def stats_card(account: str = "default", format: str = "markdown") -> str:
             card = generate_card(result, account, portfolio_items)
         return _ok({"card": card, "stats": result})
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 @mcp.tool()
@@ -484,7 +497,7 @@ def leaderboard_entry(account: str = "default") -> str:
             "qualified": result.get("total_trades", 0) >= 10,
         })
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 @mcp.tool()
@@ -531,7 +544,7 @@ def share_content(
 
         return _ok({"card": card, "platform": platform, "template": template})
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 @mcp.tool()
@@ -564,7 +577,7 @@ def pk_card(account_a: str = "default", account_b: str = "aggressive") -> str:
             account_b: results[account_b],
         })
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 # ---------------------------------------------------------------------------
@@ -616,7 +629,7 @@ def leaderboard_card(accounts: str = "") -> str:
         card = generate_leaderboard_card(qualified)
         return _ok({"card": card, "entries": qualified})
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 # ---------------------------------------------------------------------------
@@ -646,7 +659,7 @@ def pk_battle(
         result = _pk_battle(strategy_a, strategy_b, name_a, name_b, balance)
         return _ok(result)
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 # ---------------------------------------------------------------------------
@@ -670,7 +683,7 @@ def resolve(slug_or_id: str, account: str = "default") -> str:
             for r in results
         ])
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 @mcp.tool()
@@ -689,7 +702,7 @@ def resolve_all(account: str = "default") -> str:
             for r in results
         ])
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 # ---------------------------------------------------------------------------
@@ -751,7 +764,7 @@ def backtest(
         )
         return _ok(asdict(result))
     except Exception as e:
-        return _err(str(e), type(e).__name__)
+        return _err_from(e)
 
 
 # ---------------------------------------------------------------------------

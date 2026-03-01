@@ -63,6 +63,33 @@ def _parse(result: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Error sanitization
+# ---------------------------------------------------------------------------
+
+
+class TestErrFrom:
+    def test_sim_error_passes_through(self):
+        from pm_trader.models import InsufficientBalanceError
+        from pm_trader.mcp_server import _err_from
+        e = InsufficientBalanceError(required=100.0, available=50.0)
+        result = json.loads(_err_from(e))
+        assert "Insufficient balance" in result["error"]
+        assert result["code"] == "INSUFFICIENT_BALANCE"
+
+    def test_value_error_passes_through(self):
+        from pm_trader.mcp_server import _err_from
+        result = json.loads(_err_from(ValueError("bad input")))
+        assert result["error"] == "bad input"
+        assert result["code"] == "ValueError"
+
+    def test_unexpected_error_sanitized(self):
+        from pm_trader.mcp_server import _err_from
+        result = json.loads(_err_from(RuntimeError("/home/user/.secret/file")))
+        assert result["error"] == "Internal error"
+        assert result["code"] == "internal_error"
+
+
+# ---------------------------------------------------------------------------
 # Account tools
 # ---------------------------------------------------------------------------
 
@@ -345,7 +372,7 @@ class TestLeaderboardCard:
         with patch("pm_trader.mcp_server.Path.home", side_effect=RuntimeError("boom")):
             result = _parse(leaderboard_card())
         assert result["ok"] is False
-        assert "boom" in result["error"]
+        assert result["code"] == "internal_error"
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +570,7 @@ class TestBuyTool:
     def test_buy_not_initialized(self):
         result = _parse(buy("btc", "yes", 100.0))
         assert result["ok"] is False
-        assert result["code"] == "NotInitializedError"
+        assert result["code"] == "NOT_INITIALIZED"
 
     def test_buy_insufficient_balance(self):
         init_account(balance=1.0)
@@ -558,7 +585,7 @@ class TestBuyTool:
         _mock_engine_api(_get_engine())
         result = _parse(buy("will-bitcoin-hit-100k", "maybe", 100.0))
         assert result["ok"] is False
-        assert result["code"] == "InvalidOutcomeError"
+        assert result["code"] == "INVALID_OUTCOME"
 
 
 class TestSellTool:
@@ -568,7 +595,7 @@ class TestSellTool:
         _mock_engine_api(_get_engine())
         result = _parse(sell("will-bitcoin-hit-100k", "yes", 10.0))
         assert result["ok"] is False
-        assert result["code"] == "NoPositionError"
+        assert result["code"] == "NO_POSITION"
 
     def test_sell_after_buy(self):
         init_account()
