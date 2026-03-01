@@ -105,33 +105,49 @@ class PolymarketClient:
     def get_market(self, slug_or_id: str) -> Market:
         """Resolve a slug or condition_id to a full Market object.
 
-        Market metadata is cached for 5 minutes.
+        Market metadata is cached for 5 minutes.  Tries slug first
+        (Gamma API), then condition_id (CLOB API).
         """
         cache_key = f"market:{slug_or_id}"
         cached = self._get_cached(cache_key)
         if cached is not None:
             return _parse_market(cached)
 
-        # Try by slug first
+        # Try by slug first (Gamma API)
         data = self._gamma_get("/markets", params={"slug": slug_or_id})
         if isinstance(data, list) and len(data) > 0:
             market_data = data[0]
-        elif isinstance(data, dict) and _has_condition_id(data):
-            market_data = data
-        else:
-            # Try by condition_id
-            data = self._gamma_get(
-                "/markets", params={"condition_id": slug_or_id}
-            )
-            if isinstance(data, list) and len(data) > 0:
-                market_data = data[0]
-            elif isinstance(data, dict) and _has_condition_id(data):
-                market_data = data
-            else:
-                raise MarketNotFoundError(slug_or_id)
+            self._set_cached(cache_key, market_data)
+            return _parse_market(market_data)
+        if isinstance(data, dict) and _has_condition_id(data):
+            self._set_cached(cache_key, data)
+            return _parse_market(data)
 
-        self._set_cached(cache_key, market_data)
-        return _parse_market(market_data)
+        # Try by condition_id via CLOB API (reliable exact match)
+        if slug_or_id.startswith("0x"):
+            try:
+                clob_data = self._clob_get(f"/markets/{slug_or_id}")
+                if isinstance(clob_data, dict) and clob_data.get("condition_id"):
+                    # CLOB returns tokens with outcome/token_id — enrich with Gamma data
+                    market = _parse_clob_market(clob_data)
+                    # Try to get full Gamma data using the slug from CLOB
+                    if market.slug:
+                        try:
+                            gamma_data = self._gamma_get(
+                                "/markets", params={"slug": market.slug}
+                            )
+                            if isinstance(gamma_data, list) and len(gamma_data) > 0:
+                                self._set_cached(cache_key, gamma_data[0])
+                                return _parse_market(gamma_data[0])
+                        except Exception:
+                            pass
+                    # Fall back to CLOB-only data
+                    self._set_cached(cache_key, clob_data)
+                    return market
+            except ApiError:
+                pass
+
+        raise MarketNotFoundError(slug_or_id)
 
     def list_markets(
         self, *, limit: int = 20, sort_by: str = "volume"
@@ -231,6 +247,39 @@ class PolymarketClient:
 def _has_condition_id(data: dict) -> bool:
     """Check if a response dict has a condition ID (camelCase or snake_case)."""
     return bool(data.get("conditionId") or data.get("condition_id"))
+
+
+def _parse_clob_market(data: dict) -> Market:
+    """Parse a CLOB /markets/{condition_id} response into a Market."""
+    tokens_raw = data.get("tokens", [])
+    if isinstance(tokens_raw, str):
+        tokens_raw = json.loads(tokens_raw)
+
+    tokens = []
+    for t in tokens_raw:
+        tokens.append({
+            "token_id": t.get("token_id", ""),
+            "outcome": t.get("outcome", ""),
+        })
+
+    def _to_bool(val) -> bool:
+        if isinstance(val, str):
+            return val.lower() == "true"
+        return bool(val)
+
+    return Market(
+        condition_id=data.get("condition_id", ""),
+        slug=data.get("market_slug", ""),
+        question=data.get("question", ""),
+        description=data.get("description", ""),
+        outcomes=[t.get("outcome", "") for t in tokens] or ["Yes", "No"],
+        outcome_prices=[0.0, 0.0],  # CLOB doesn't return prices here
+        tokens=tokens,
+        active=_to_bool(data.get("active", True)),
+        closed=_to_bool(data.get("closed", False)),
+        end_date=data.get("end_date_iso", ""),
+        tick_size=float(data.get("minimum_tick_size", 0.01) or 0.01),
+    )
 
 
 def _parse_market(data: dict) -> Market:

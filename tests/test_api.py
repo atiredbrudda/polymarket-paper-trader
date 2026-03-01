@@ -171,9 +171,26 @@ class TestGetMarket:
             url=httpx.URL(GAMMA_BASE + "/markets", params={"slug": "0xabc123"}),
             json=[],
         )
-        # Second request (condition_id lookup) returns the market
+        # Second request goes to CLOB /markets/{condition_id}
         httpx_mock.add_response(
-            url=httpx.URL(GAMMA_BASE + "/markets", params={"condition_id": "0xabc123"}),
+            url=httpx.URL(CLOB_BASE + "/markets/0xabc123"),
+            json={
+                "condition_id": "0xabc123",
+                "market_slug": "will-bitcoin-hit-100k",
+                "question": "Will Bitcoin hit $100k?",
+                "description": "",
+                "active": "True",
+                "closed": "False",
+                "minimum_tick_size": "0.01",
+                "tokens": json.dumps([
+                    {"token_id": "tok_yes", "outcome": "Yes"},
+                    {"token_id": "tok_no", "outcome": "No"},
+                ]),
+            },
+        )
+        # CLOB lookup triggers a Gamma slug lookup for enrichment
+        httpx_mock.add_response(
+            url=httpx.URL(GAMMA_BASE + "/markets", params={"slug": "will-bitcoin-hit-100k"}),
             json=[SAMPLE_GAMMA_MARKET],
         )
         market = client.get_market("0xabc123")
@@ -184,12 +201,22 @@ class TestGetMarket:
             url=httpx.URL(GAMMA_BASE + "/markets", params={"slug": "nonexistent"}),
             json=[],
         )
-        httpx_mock.add_response(
-            url=httpx.URL(GAMMA_BASE + "/markets", params={"condition_id": "nonexistent"}),
-            json=[],
-        )
+        # "nonexistent" doesn't start with "0x" so no CLOB lookup
         with pytest.raises(MarketNotFoundError):
             client.get_market("nonexistent")
+
+    def test_market_not_found_by_condition_id(self, client: PolymarketClient, httpx_mock):
+        httpx_mock.add_response(
+            url=httpx.URL(GAMMA_BASE + "/markets", params={"slug": "0xdead"}),
+            json=[],
+        )
+        httpx_mock.add_response(
+            url=httpx.URL(CLOB_BASE + "/markets/0xdead"),
+            status_code=404,
+            text="Not Found",
+        )
+        with pytest.raises(MarketNotFoundError):
+            client.get_market("0xdead")
 
     def test_market_cached_on_second_call(self, client: PolymarketClient, httpx_mock):
         httpx_mock.add_response(
