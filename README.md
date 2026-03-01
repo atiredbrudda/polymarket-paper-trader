@@ -1,8 +1,9 @@
 # polymarket-paper-trader
 
+[![PyPI](https://img.shields.io/pypi/v/polymarket-paper-trader.svg)](https://pypi.org/project/polymarket-paper-trader/)
 [![Tests](https://github.com/agent-next/polymarket-paper-trader/actions/workflows/test.yml/badge.svg)](https://github.com/agent-next/polymarket-paper-trader/actions/workflows/test.yml)
 [![ClawHub](https://img.shields.io/badge/ClawHub-install-orange.svg)](https://clawhub.com/robotlearning123/polymarket-paper-trader)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/agent-next/polymarket-paper-trader/blob/main/LICENSE)
 
 **Your AI agent just became a Polymarket trader.**
 
@@ -27,13 +28,13 @@ That's it. Your AI agent is now trading Polymarket with zero risk.
 ## Install
 
 ```bash
+# via pip
+pip install polymarket-paper-trader
+
 # via ClawHub (for OpenClaw agents)
 npx clawhub install polymarket-paper-trader
 
-# via pip (for direct use)
-uv pip install -e .
-
-# dev dependencies (tests)
+# from source (development)
 uv pip install -e ".[dev]"
 ```
 
