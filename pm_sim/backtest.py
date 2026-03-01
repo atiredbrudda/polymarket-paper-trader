@@ -137,18 +137,6 @@ def run_backtest(
         # Track latest prices for all market/outcome pairs
         prices: dict[str, float] = {}
 
-        # Patch the API to use synthetic books
-        original_get_trade_context = engine.api.get_trade_context
-        original_get_order_book = engine.api.get_order_book
-        original_get_midpoint = engine.api.get_midpoint
-
-        def _patched_get_midpoint(token_id: str) -> float:
-            """Return midpoint from our tracked prices if available."""
-            # Try to find this token's price in our cache
-            for key, mid in prices.items():
-                return mid
-            return 0.5
-
         for snapshot in snapshots:
             key = f"{snapshot.market_slug}:{snapshot.outcome}"
             prices[key] = snapshot.midpoint

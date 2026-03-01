@@ -17,6 +17,7 @@ from pm_sim.models import (
 
 from pm_sim import mcp_server
 from pm_sim.mcp_server import (
+    backtest,
     buy,
     cancel_order,
     check_orders,
@@ -609,6 +610,30 @@ class TestBacktestTool:
             assert result["data"]["snapshots_processed"] == 2
         finally:
             sys.path.pop(0)
+
+
+class TestMcpServerMain:
+    def test_main_calls_mcp_run(self):
+        with patch.object(mcp_server.mcp, "run") as mock_run:
+            mcp_server.main()
+            mock_run.assert_called_once()
+
+
+class TestBacktestInvalidStrategy:
+    def test_strategy_path_no_dot(self, tmp_path):
+        """strategy_path without module.function format returns error."""
+        # Create a valid data file so we get past the file-loading step
+        csv_file = tmp_path / "data.csv"
+        csv_file.write_text(
+            "timestamp,market_slug,outcome,midpoint\n"
+            "2026-01-01T00:00:00Z,test,yes,0.65\n"
+        )
+        result = _parse(backtest(
+            data_path=str(csv_file),
+            strategy_path="no_dot_here",
+        ))
+        assert result["ok"] is False
+        assert "module.function" in result["error"]
 
 
 class TestMultiAccount:

@@ -355,7 +355,6 @@ def resolve(ctx: click.Context, slug_or_id: str | None, resolve_all: bool) -> No
                 )
             )
             sys.exit(1)
-            return
         click.echo(_ok(results))
     except SimError as e:
         click.echo(_err(e))

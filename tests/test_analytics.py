@@ -128,18 +128,17 @@ class TestSharpeRatio:
         # Should not crash and return some finite value
         assert math.isfinite(result)
 
-    def test_identical_daily_returns(self):
-        """When all daily returns are identical, std=0 → sharpe=0."""
-        # Same P&L every day → zero variance
+    def test_zero_std_returns_zero(self):
+        """When all daily returns are exactly zero, std=0 → sharpe=0."""
+        # Each day: buy $100 + sell $100 → net P&L = 0 per day
         trades = [
-            _trade(id=1, side="sell", amount_usd=100, fee=0, created_at="2026-01-01 10:00:00"),
-            _trade(id=2, side="sell", amount_usd=100, fee=0, created_at="2026-01-02 10:00:00"),
-            _trade(id=3, side="sell", amount_usd=100, fee=0, created_at="2026-01-03 10:00:00"),
+            _trade(id=1, side="buy", amount_usd=100, fee=0, created_at="2026-01-01 08:00:00"),
+            _trade(id=2, side="sell", amount_usd=100, fee=0, created_at="2026-01-01 12:00:00"),
+            _trade(id=3, side="buy", amount_usd=100, fee=0, created_at="2026-01-02 08:00:00"),
+            _trade(id=4, side="sell", amount_usd=100, fee=0, created_at="2026-01-02 12:00:00"),
         ]
         result = sharpe_ratio(trades, 10_000)
-        # If returns are very similar (not identical due to cumulative changing),
-        # Sharpe should still be finite
-        assert math.isfinite(result)
+        assert result == 0.0
 
     def test_volatile_returns(self):
         # Big win then big loss → lower Sharpe than consistent

@@ -800,3 +800,79 @@ class TestCliSimErrorPaths:
         data = _parse(result)
         assert data["ok"] is False
         assert result.exit_code == 1
+
+    @patch("pm_sim.engine.Engine.init_account")
+    def test_init_sim_error(self, mock_init, runner, data_dir):
+        from pm_sim.models import SimError
+        mock_init.side_effect = SimError("boom")
+        result = _invoke(runner, ["init"], data_dir)
+        data = _parse(result)
+        assert data["ok"] is False
+        assert result.exit_code == 1
+
+    @patch("pm_sim.engine.Engine.reset")
+    def test_reset_sim_error(self, mock_reset, runner, data_dir):
+        from pm_sim.models import SimError
+        _invoke(runner, ["init"], data_dir)
+        mock_reset.side_effect = SimError("boom")
+        result = _invoke(runner, ["reset", "--confirm"], data_dir)
+        data = _parse(result)
+        assert data["ok"] is False
+        assert result.exit_code == 1
+
+    @patch("pm_sim.engine.Engine.get_pending_orders")
+    def test_orders_list_sim_error(self, mock_orders, runner, data_dir):
+        from pm_sim.models import SimError
+        _invoke(runner, ["init"], data_dir)
+        mock_orders.side_effect = SimError("fail")
+        result = _invoke(runner, ["orders", "list"], data_dir)
+        data = _parse(result)
+        assert data["ok"] is False
+        assert result.exit_code == 1
+
+    @patch("pm_sim.engine.Engine.cancel_limit_order")
+    def test_orders_cancel_sim_error(self, mock_cancel, runner, data_dir):
+        from pm_sim.models import SimError
+        _invoke(runner, ["init"], data_dir)
+        mock_cancel.side_effect = SimError("fail")
+        result = _invoke(runner, ["orders", "cancel", "1"], data_dir)
+        data = _parse(result)
+        assert data["ok"] is False
+        assert result.exit_code == 1
+
+    @patch("pm_sim.engine.Engine.check_orders")
+    def test_orders_check_sim_error(self, mock_check, runner, data_dir):
+        from pm_sim.models import SimError
+        _invoke(runner, ["init"], data_dir)
+        mock_check.side_effect = SimError("fail")
+        result = _invoke(runner, ["orders", "check"], data_dir)
+        data = _parse(result)
+        assert data["ok"] is False
+        assert result.exit_code == 1
+
+    @patch("pm_sim.benchmark.run_strategy")
+    def test_benchmark_run_success(self, mock_run, runner, data_dir):
+        """benchmark run success path echoes _ok(result)."""
+        mock_run.return_value = {"strategy": "mod.fn", "pnl": 100.0}
+        result = _invoke(runner, ["benchmark", "run", "mod.fn"], data_dir)
+        data = _parse(result)
+        assert data["ok"] is True
+        assert data["data"]["strategy"] == "mod.fn"
+
+    @patch("pm_sim.benchmark.compare_accounts")
+    def test_benchmark_compare_exception(self, mock_compare, runner, data_dir):
+        """benchmark compare raises an exception."""
+        mock_compare.side_effect = RuntimeError("comparison failed")
+        # Create the accounts so the path check passes
+        _invoke(runner, ["--account", "alice", "init"], data_dir)
+        _invoke(runner, ["--account", "bob", "init"], data_dir)
+        result = _invoke(runner, ["benchmark", "compare", "alice", "bob"], data_dir)
+        data = _parse(result)
+        assert data["ok"] is False
+        assert data["code"] == "BENCHMARK_ERROR"
+
+    @patch("pm_sim.mcp_server.main")
+    def test_mcp_command(self, mock_mcp_main, runner, data_dir):
+        """mcp command invokes the MCP server."""
+        result = runner.invoke(main, ["mcp"])
+        mock_mcp_main.assert_called_once()

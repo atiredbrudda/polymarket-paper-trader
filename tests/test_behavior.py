@@ -24,7 +24,7 @@ from pm_sim.models import (
     OrderRejectedError,
 )
 from pm_sim.orderbook import simulate_buy_fill, simulate_sell_fill
-from pm_sim.orders import create_order, get_pending_orders
+from pm_sim.orders import create_order, get_order, get_pending_orders
 
 
 # ---------------------------------------------------------------------------
@@ -519,6 +519,22 @@ class TestOrderbookEdgeCases:
         assert not fill.filled
         assert fill.total_shares == 0
 
+    def test_sell_exact_fill_across_levels(self):
+        """Sell exactly fills across first 2 levels, break triggers on 3rd."""
+        # 3 levels: first two fill 100 shares, third is never reached
+        book = _book(bids=[(0.70, 50), (0.60, 50), (0.50, 100)])
+        fill = simulate_sell_fill(book, 100.0, 0, "fok")
+        assert fill.filled
+        assert fill.total_shares == 100.0
+        assert fill.levels_filled == 2  # Only 2 levels consumed
+
+    def test_sell_all_bids_below_min_price(self):
+        """When all bids are below min_price, no fills happen."""
+        book = _book(bids=[(0.30, 100), (0.20, 100)])
+        fill = simulate_sell_fill(book, 50.0, 0, "fak", min_price=0.50)
+        assert not fill.filled
+        assert fill.total_shares == 0
+
 
 # ---------------------------------------------------------------------------
 # Scenario 12: Portfolio midpoint failure fallback
@@ -583,6 +599,24 @@ class TestResolveEdgeCases:
         results = acct.resolve_all()
         assert results == []
 
+    def test_resolve_all_deduplicates_same_market(self, acct):
+        """resolve_all only processes each market once even with multiple positions."""
+        _mock(acct, book=_book(asks=[(0.65, 5000)], bids=[(0.64, 5000)]))
+        # Buy YES and NO in the same market → two positions, one condition_id
+        acct.buy("test-market", "yes", 50.0)
+        _mock(acct, book=_book(asks=[(0.35, 5000)], bids=[(0.34, 5000)]))
+        acct.buy("test-market", "no", 50.0)
+
+        positions = acct.get_portfolio()
+        assert len(positions) == 2
+
+        # Resolve — should process the market only once
+        resolved = _market(closed=True, outcome_prices=[1.0, 0.0])
+        acct.api.get_market = MagicMock(return_value=resolved)
+        results = acct.resolve_all()
+        # Both positions resolved in a single market pass
+        assert len(results) == 2
+
     def test_determine_winner_no_clear_winner(self, acct):
         """When no outcome has price >= 0.99, winner is empty string."""
         _mock(acct)
@@ -615,6 +649,18 @@ class TestCheckOrdersEdgeCases:
         results = acct.check_orders()
         # No fills, no rejections — order stays pending
         assert len(results) == 0
+        assert len(acct.get_pending_orders()) == 1
+
+    def test_limit_order_no_fillable_liquidity_within_limit(self, acct):
+        """Limit buy at 0.40 but cheapest ask is 0.66 — no fill, order stays pending."""
+        _mock(acct, book=_book(asks=[(0.66, 5000)], bids=[(0.64, 5000)]))
+        acct.place_limit_order("test-market", "yes", "buy", 100.0, 0.40)
+
+        # Check — best ask (0.66) is above limit (0.40), fill simulates with max_price=0.40
+        # but no asks at or below 0.40 exist, so fill is empty → continue
+        results = acct.check_orders()
+        filled = [r for r in results if r["action"] == "filled"]
+        assert len(filled) == 0
         assert len(acct.get_pending_orders()) == 1
 
     def test_limit_buy_insufficient_balance(self, acct):
@@ -749,3 +795,75 @@ class TestEndToEndAgentWorkflow:
         # 5. Position exists
         portfolio = acct.get_portfolio()
         assert len(portfolio) == 1
+
+
+# ---------------------------------------------------------------------------
+# Scenario 16: orders.get_order retrieves specific order
+# ---------------------------------------------------------------------------
+
+
+class TestGetOrder:
+    def test_get_order_returns_created_order(self, acct):
+        """get_order retrieves a specific order by ID."""
+        _mock(acct, book=_book(asks=[(0.65, 5000)], bids=[(0.64, 5000)]))
+        acct.place_limit_order("test-market", "yes", "buy", 100.0, 0.40)
+        pending = acct.get_pending_orders()
+        assert len(pending) == 1
+        order_id = pending[0]["id"]
+
+        order = get_order(acct.db.conn, order_id)
+        assert order is not None
+        assert order.id == order_id
+        assert order.market_slug == "test-market"
+        assert order.side == "buy"
+        assert order.limit_price == 0.40
+
+    def test_get_order_nonexistent(self, acct):
+        """get_order returns None for nonexistent order."""
+        _mock(acct)
+        order = get_order(acct.db.conn, 99999)
+        assert order is None
+
+
+# ---------------------------------------------------------------------------
+# Scenario 17: defensive guards in engine
+# ---------------------------------------------------------------------------
+
+
+class TestDefensiveGuards:
+    def test_update_position_after_sell_no_position(self, acct):
+        """_update_position_after_sell returns early when position is None."""
+        _mock(acct, book=_book(asks=[(0.65, 5000)], bids=[(0.64, 5000)]))
+        market = acct.api.get_market("test-market")
+        # Call directly with no position existing — should return without error
+        acct._update_position_after_sell(
+            market=market, outcome="yes", sold_shares=10.0, proceeds=6.5,
+        )
+        # No crash, no position created
+        assert acct.db.get_position(market.condition_id, "yes") is None
+
+    def test_check_orders_no_fillable_liquidity(self, acct):
+        """check_orders skips order when simulate returns unfilled non-partial."""
+        _mock(acct, book=_book(asks=[(0.65, 5000)], bids=[(0.64, 5000)]))
+        # Place limit buy at a price equal to the ask, so the pre-check passes
+        acct.place_limit_order("test-market", "yes", "buy", 100.0, 0.65)
+
+        # Now mock simulate_buy_fill to return an empty fill (defensive edge)
+        from pm_sim.orderbook import FillResult
+        empty_fill = FillResult(
+            filled=False, is_partial=False, total_shares=0.0,
+            total_cost=0.0, avg_price=0.0, fee=0.0,
+            slippage_bps=0.0, levels_filled=0, fills=[],
+        )
+        with MagicMock() as mock_sim:
+            import pm_sim.engine as engine_mod
+            original_sim = engine_mod.simulate_buy_fill
+            engine_mod.simulate_buy_fill = lambda *a, **kw: empty_fill
+            try:
+                results = acct.check_orders()
+                filled = [r for r in results if r["action"] == "filled"]
+                assert len(filled) == 0
+                # Order should still be pending
+                assert len(acct.get_pending_orders()) == 1
+            finally:
+                engine_mod.simulate_buy_fill = original_sim
