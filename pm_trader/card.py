@@ -1,17 +1,30 @@
 """Shareable stats cards for social platforms.
 
 Generates formatted trading performance cards optimized for:
-- X/Twitter (280 chars, hashtags, engagement bait)
+- X/Twitter (hashtags, engagement hooks)
 - Chat apps (Telegram, Discord, WhatsApp — markdown)
 - Plain text (fallback)
 
-Templates:
-- performance: overall stats summary (default)
+Card types:
+- tweet: compact stats for X/Twitter
+- card: markdown for chat apps
+- plain: plain text, no formatting
 - milestone: achievement celebration (e.g. "Hit 50 trades!")
-- daily: daily activity report with top movers
+- pk: head-to-head comparison between two accounts
+- leaderboard: top 10 ranking table
+- daily: daily report with top positions
 """
 
 from __future__ import annotations
+
+_HASHTAGS = "#Polymarket #AITrading #OpenClaw"
+_CTA = "Make your agent trade \u2192 npx clawhub install polymarket-paper-trader"
+_HOOK = "Can your agent beat mine?"
+
+
+def _sign(value: float) -> str:
+    """Return '+' prefix for non-negative values, '' for negative."""
+    return "+" if value >= 0 else ""
 
 
 def _roi_icon(roi: float) -> str:
@@ -36,16 +49,17 @@ def _extract(stats: dict) -> dict:
     return {
         "roi": roi,
         "pnl": pnl,
+        "pnl_abs": abs(pnl),
         "total": stats.get("total_value", 0.0),
         "sharpe": stats.get("sharpe_ratio", 0.0),
         "win": stats.get("win_rate", 0.0),
         "trades": stats.get("total_trades", 0),
-        "dd": stats.get("max_drawdown", 0.0),
-        "fees": stats.get("total_fees", 0.0),
         "starting": stats.get("starting_balance", 0.0),
         "icon": _roi_icon(roi),
-        "pnl_sign": "+" if pnl >= 0 else "",
-        "roi_sign": "+" if roi >= 0 else "",
+        "pnl_sign": _sign(pnl),
+        "roi_sign": _sign(roi),
+        "pnl_verb": "made" if pnl >= 0 else "lost",
+        "pnl_noun": "profit" if pnl >= 0 else "loss",
     }
 
 
@@ -57,12 +71,11 @@ def _format_top_positions(positions: list[dict], limit: int = 3) -> list[str]:
     lines = []
     for p in top:
         slug = p.get("market_slug", "?")
-        # Shorten slug for display: "will-trump-win-2024" → "will-trump-win-2024"
+        # Truncate long slugs: "will-trump-win-the-presidential-..." → 30 chars + "..."
         display = slug[:30] + "..." if len(slug) > 30 else slug
         outcome = p.get("outcome", "?").upper()
         pnl = p.get("unrealized_pnl", 0.0)
-        sign = "+" if pnl >= 0 else ""
-        lines.append(f"{display} ({outcome}) {sign}${pnl:,.0f}")
+        lines.append(f"{display} ({outcome}) {_sign(pnl)}${pnl:,.0f}")
     return lines
 
 
@@ -95,14 +108,14 @@ def generate_tweet(
     account: str = "default",
     positions: list[dict] | None = None,
 ) -> str:
-    """Generate a tweet-optimized card (< 280 chars).
+    """Generate a tweet-optimized card for X/Twitter.
 
-    Designed for X/Twitter sharing. Compact, eye-catching, with hashtags.
+    Compact, eye-catching, with hashtags and challenge hook.
     """
     s = _extract(stats)
 
     lines = [
-        f"{s['icon']} My AI agent {'made' if s['pnl'] >= 0 else 'lost'} ${abs(s['pnl']):,.0f} trading Polymarket",
+        f"{s['icon']} My AI agent {s['pnl_verb']} ${s['pnl_abs']:,.0f} trading Polymarket",
         "",
         f"{s['roi_sign']}{s['roi']:.1f}% ROI | {s['win'] * 100:.0f}% win rate | {s['trades']} trades",
         "Zero risk. Real prices.",
@@ -115,13 +128,7 @@ def generate_tweet(
         for t in top:
             lines.append(f"  {t}")
 
-    lines.extend([
-        "",
-        "Can your agent beat mine?",
-        "",
-        "#Polymarket #AITrading #OpenClaw",
-        "Make your agent trade \u2192 npx clawhub install polymarket-paper-trader",
-    ])
+    lines.extend(["", _HOOK, "", _HASHTAGS, _CTA])
 
     return "\n".join(lines)
 
@@ -152,12 +159,7 @@ def generate_card(
         for t in top:
             lines.append(f"  {t}")
 
-    lines.extend([
-        "",
-        "Can your agent beat mine?",
-        "",
-        "`Make your agent trade \u2192 npx clawhub install polymarket-paper-trader`",
-    ])
+    lines.extend(["", _HOOK, "", f"`{_CTA}`"])
 
     return "\n".join(lines)
 
@@ -210,8 +212,8 @@ def generate_pk_card(
         "",
         "Who's the better trader? \U0001f914",
         "",
-        "#Polymarket #AITrading #OpenClaw",
-        "Make your agent trade \u2192 npx clawhub install polymarket-paper-trader",
+        _HASHTAGS,
+        _CTA,
     ]
 
     return "\n".join(lines)
@@ -242,12 +244,7 @@ def generate_card_plain(
         for t in top:
             lines.append(f"    {t}")
 
-    lines.extend([
-        "",
-        "Can your agent beat mine?",
-        "",
-        "Make your agent trade \u2192 npx clawhub install polymarket-paper-trader",
-    ])
+    lines.extend(["", _HOOK, "", _CTA])
 
     return "\n".join(lines)
 
@@ -263,15 +260,15 @@ def generate_milestone_tweet(stats: dict, milestone: str | None = None) -> str:
     lines = [
         f"\U0001f3c6 {ms}",
         "",
-        f"${abs(s['pnl']):,.0f} {'profit' if s['pnl'] >= 0 else 'loss'} | {s['roi_sign']}{s['roi']:.1f}% ROI | {s['win'] * 100:.0f}% win rate",
+        f"${s['pnl_abs']:,.0f} {s['pnl_noun']} | {s['roi_sign']}{s['roi']:.1f}% ROI | {s['win'] * 100:.0f}% win rate",
         "",
         f"Tier: {_tier(stats)}",
-        "Zero risk. Real Polymarket prices.",
+        "Zero risk. Real prices.",
         "",
-        "Can your agent beat mine?",
+        _HOOK,
         "",
-        "#Polymarket #AITrading #OpenClaw",
-        "Make your agent trade \u2192 npx clawhub install polymarket-paper-trader",
+        _HASHTAGS,
+        _CTA,
     ]
 
     return "\n".join(lines)
@@ -296,17 +293,16 @@ def generate_leaderboard_card(entries: list[dict], title: str = "Top 10 AI Trade
         pnl = e.get("pnl", 0.0)
         trades = e.get("total_trades", 0)
         tier = _tier(e)
-        sign = "+" if roi >= 0 else ""
         lines.append(
-            f"  {i:>2}  {name:<14} {sign}{roi:>5.1f}%  ${pnl:>8,.0f}  {trades:>6}  {tier}"
+            f"  {i:>2}  {name:<14} {_sign(roi)}{roi:>5.1f}%  ${pnl:>8,.0f}  {trades:>6}  {tier}"
         )
 
     lines.extend([
         "",
         "Qualify: 10+ trades | Ranked by ROI%",
         "",
-        "#Polymarket #AITrading #OpenClaw",
-        "Make your agent trade \u2192 npx clawhub install polymarket-paper-trader",
+        _HASHTAGS,
+        _CTA,
     ])
 
     return "\n".join(lines)
@@ -337,10 +333,6 @@ def generate_daily_report(
         for t in top:
             lines.append(f"  {t}")
 
-    lines.extend([
-        "",
-        "#Polymarket #AITrading #OpenClaw",
-        "Make your agent trade \u2192 npx clawhub install polymarket-paper-trader",
-    ])
+    lines.extend(["", _HASHTAGS, _CTA])
 
     return "\n".join(lines)
