@@ -4,6 +4,11 @@ Generates formatted trading performance cards optimized for:
 - X/Twitter (280 chars, hashtags, engagement bait)
 - Chat apps (Telegram, Discord, WhatsApp — markdown)
 - Plain text (fallback)
+
+Templates:
+- performance: overall stats summary (default)
+- milestone: achievement celebration (e.g. "Hit 50 trades!")
+- daily: daily activity report with top movers
 """
 
 from __future__ import annotations
@@ -12,16 +17,16 @@ from __future__ import annotations
 def _roi_icon(roi: float) -> str:
     """Pick emoji based on ROI performance."""
     if roi > 20:
-        return "🔥"
+        return "\U0001f525"
     if roi > 10:
-        return "🚀"
+        return "\U0001f680"
     if roi > 0:
-        return "📈"
+        return "\U0001f4c8"
     if roi == 0:
-        return "➖"
+        return "\u2796"
     if roi > -10:
-        return "📉"
-    return "💀"
+        return "\U0001f4c9"
+    return "\U0001f480"
 
 
 def _extract(stats: dict) -> dict:
@@ -44,7 +49,52 @@ def _extract(stats: dict) -> dict:
     }
 
 
-def generate_tweet(stats: dict, account: str = "default") -> str:
+def _format_top_positions(positions: list[dict], limit: int = 3) -> list[str]:
+    """Format top positions by current value for card display."""
+    if not positions:
+        return []
+    top = sorted(positions, key=lambda p: p.get("current_value", 0), reverse=True)[:limit]
+    lines = []
+    for p in top:
+        slug = p.get("market_slug", "?")
+        # Shorten slug for display: "will-trump-win-2024" → "will-trump-win-2024"
+        display = slug[:30] + "..." if len(slug) > 30 else slug
+        outcome = p.get("outcome", "?").upper()
+        pnl = p.get("unrealized_pnl", 0.0)
+        sign = "+" if pnl >= 0 else ""
+        lines.append(f"{display} ({outcome}) {sign}${pnl:,.0f}")
+    return lines
+
+
+def _detect_milestone(stats: dict) -> str | None:
+    """Detect achievements worth celebrating."""
+    trades = stats.get("total_trades", 0)
+    roi = stats.get("roi_pct", 0.0)
+    pnl = stats.get("pnl", 0.0)
+    if trades == 1:
+        return "First trade executed!"
+    if trades == 10:
+        return "10 trades milestone!"
+    if trades == 50:
+        return "50 trades — getting serious!"
+    if trades == 100:
+        return "100 trades — centurion!"
+    if roi >= 50:
+        return f"ROI hit {roi:.0f}%!"
+    if pnl >= 10000:
+        return f"P&L crossed $10k!"
+    if pnl >= 5000:
+        return f"P&L crossed $5k!"
+    if pnl >= 1000:
+        return f"P&L crossed $1k!"
+    return None
+
+
+def generate_tweet(
+    stats: dict,
+    account: str = "default",
+    positions: list[dict] | None = None,
+) -> str:
     """Generate a tweet-optimized card (< 280 chars).
 
     Designed for X/Twitter sharing. Compact, eye-catching, with hashtags.
@@ -57,17 +107,31 @@ def generate_tweet(stats: dict, account: str = "default") -> str:
         f"ROI: {s['roi_sign']}{s['roi']:.1f}%",
         f"P&L: {s['pnl_sign']}${s['pnl']:,.0f}",
         f"Sharpe: {s['sharpe']:.2f} | Win: {s['win'] * 100:.0f}% | {s['trades']} trades",
+    ]
+
+    top = _format_top_positions(positions or [])
+    if top:
+        lines.append("")
+        lines.append("Top positions:")
+        for t in top:
+            lines.append(f"  {t}")
+
+    lines.extend([
         "",
         "Paper trading with real order books, zero risk",
         "",
         "#Polymarket #AITrading #PredictionMarkets",
         "npx clawhub install polymarket-paper-trader",
-    ]
+    ])
 
     return "\n".join(lines)
 
 
-def generate_card(stats: dict, account: str = "default") -> str:
+def generate_card(
+    stats: dict,
+    account: str = "default",
+    positions: list[dict] | None = None,
+) -> str:
     """Generate a chat-optimized card with markdown.
 
     For Telegram, Discord, Slack — supports bold/italic.
@@ -83,9 +147,16 @@ def generate_card(stats: dict, account: str = "default") -> str:
         "",
         f"P&L: *{s['pnl_sign']}${s['pnl']:,.2f}*",
         f"Portfolio: *${s['total']:,.2f}* (started ${s['starting']:,.0f})",
-        "",
-        "`npx clawhub install polymarket-paper-trader`",
     ]
+
+    top = _format_top_positions(positions or [])
+    if top:
+        lines.append("")
+        lines.append("*Top positions:*")
+        for t in top:
+            lines.append(f"  {t}")
+
+    lines.extend(["", "`npx clawhub install polymarket-paper-trader`"])
 
     return "\n".join(lines)
 
@@ -143,7 +214,11 @@ def generate_pk_card(
     return "\n".join(lines)
 
 
-def generate_card_plain(stats: dict, account: str = "default") -> str:
+def generate_card_plain(
+    stats: dict,
+    account: str = "default",
+    positions: list[dict] | None = None,
+) -> str:
     """Generate a plain-text card (no markdown)."""
     s = _extract(stats)
 
@@ -159,8 +234,72 @@ def generate_card_plain(stats: dict, account: str = "default") -> str:
         "",
         f"  P&L:       {s['pnl_sign']}${s['pnl']:,.2f}",
         f"  Portfolio: ${s['total']:,.2f}",
+    ]
+
+    top = _format_top_positions(positions or [])
+    if top:
+        lines.append("")
+        lines.append("  Top positions:")
+        for t in top:
+            lines.append(f"    {t}")
+
+    lines.extend(["", "npx clawhub install polymarket-paper-trader"])
+
+    return "\n".join(lines)
+
+
+def generate_milestone_tweet(stats: dict, milestone: str | None = None) -> str:
+    """Generate a milestone celebration tweet.
+
+    Auto-detects milestone if not provided.
+    """
+    s = _extract(stats)
+    ms = milestone or _detect_milestone(stats) or f"{s['trades']} trades and counting"
+
+    lines = [
+        f"\U0001f3c6 {ms}",
         "",
+        f"ROI: {s['roi_sign']}{s['roi']:.1f}% | P&L: {s['pnl_sign']}${s['pnl']:,.0f}",
+        f"{s['trades']} trades | Sharpe: {s['sharpe']:.2f}",
+        "",
+        f"Tier: {_tier(stats)}",
+        "",
+        "#Polymarket #AITrading #Milestone",
         "npx clawhub install polymarket-paper-trader",
     ]
+
+    return "\n".join(lines)
+
+
+def generate_daily_report(
+    stats: dict,
+    positions: list[dict] | None = None,
+    account: str = "default",
+) -> str:
+    """Generate a daily report card showing current state and top positions."""
+    s = _extract(stats)
+    tier = _tier(stats)
+
+    lines = [
+        f"\U0001f4ca Daily Report — {account}",
+        "",
+        f"Portfolio: ${s['total']:,.2f} ({s['roi_sign']}{s['roi']:.1f}%)",
+        f"P&L: {s['pnl_sign']}${s['pnl']:,.2f} | {s['trades']} trades",
+        f"Sharpe: {s['sharpe']:.2f} | Win: {s['win'] * 100:.0f}%",
+        f"Tier: {tier}",
+    ]
+
+    top = _format_top_positions(positions or [])
+    if top:
+        lines.append("")
+        lines.append("Top positions:")
+        for t in top:
+            lines.append(f"  {t}")
+
+    lines.extend([
+        "",
+        "#Polymarket #AITrading",
+        "npx clawhub install polymarket-paper-trader",
+    ])
 
     return "\n".join(lines)
