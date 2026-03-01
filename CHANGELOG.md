@@ -2,6 +2,14 @@
 
 All notable changes to `polymarket-paper-trader` are documented here.
 
+## Unreleased
+
+### Added
+- skills.sh support — skill discoverable via `npx skills add agent-next/polymarket-paper-trader`
+
+### Security
+- Add data trust boundaries to SKILL.md — mark Polymarket API data as untrusted, prevent indirect prompt injection via market content
+
 ## [0.1.6] - 2026-03-01
 
 ### Fixed
