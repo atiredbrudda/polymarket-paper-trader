@@ -65,6 +65,21 @@ def _err_from(e: Exception) -> str:
     return _err("Internal error", "internal_error")
 
 
+def _market_to_dict(m: object) -> dict:
+    """Serialize a Market to the MCP wire format."""
+    return {
+        "slug": m.slug,
+        "question": m.question,
+        "condition_id": m.condition_id,
+        "outcomes": m.outcomes,
+        "outcome_prices": m.outcome_prices,
+        "volume": m.volume,
+        "liquidity": m.liquidity,
+        "closed": m.closed,
+        "end_date": m.end_date,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Account tools
 # ---------------------------------------------------------------------------
@@ -122,20 +137,7 @@ def search_markets(query: str, limit: int = 10) -> str:
     """Search Polymarket for markets matching a query string."""
     engine = _get_engine()
     markets = engine.api.search_markets(query, limit=min(limit, MAX_RESULTS))
-    return _ok([
-        {
-            "slug": m.slug,
-            "question": m.question,
-            "condition_id": m.condition_id,
-            "outcomes": m.outcomes,
-            "outcome_prices": m.outcome_prices,
-            "volume": m.volume,
-            "liquidity": m.liquidity,
-            "closed": m.closed,
-            "end_date": m.end_date,
-        }
-        for m in markets
-    ])
+    return _ok([_market_to_dict(m) for m in markets])
 
 
 @mcp.tool()
@@ -143,19 +145,7 @@ def list_markets(limit: int = 20, sort_by: str = "volume") -> str:
     """List active Polymarket markets sorted by volume or liquidity."""
     engine = _get_engine()
     markets = engine.api.list_markets(limit=min(limit, MAX_RESULTS), sort_by=sort_by)
-    return _ok([
-        {
-            "slug": m.slug,
-            "question": m.question,
-            "condition_id": m.condition_id,
-            "outcomes": m.outcomes,
-            "outcome_prices": m.outcome_prices,
-            "volume": m.volume,
-            "liquidity": m.liquidity,
-            "closed": m.closed,
-        }
-        for m in markets
-    ])
+    return _ok([_market_to_dict(m) for m in markets])
 
 
 @mcp.tool()
@@ -164,17 +154,7 @@ def get_market(slug_or_id: str) -> str:
     try:
         engine = _get_engine()
         m = engine.api.get_market(slug_or_id)
-        return _ok({
-            "slug": m.slug,
-            "question": m.question,
-            "condition_id": m.condition_id,
-            "outcomes": m.outcomes,
-            "outcome_prices": m.outcome_prices,
-            "volume": m.volume,
-            "liquidity": m.liquidity,
-            "closed": m.closed,
-            "end_date": m.end_date,
-        })
+        return _ok(_market_to_dict(m))
     except Exception as e:
         return _err(str(e), "market_not_found")
 
@@ -216,20 +196,7 @@ def get_markets_by_tag(tag_slug: str, limit: int = 20) -> str:
         markets = engine.api.get_markets_by_tag(
             tag_slug, limit=min(limit, MAX_RESULTS),
         )
-        return _ok([
-            {
-                "slug": m.slug,
-                "question": m.question,
-                "condition_id": m.condition_id,
-                "outcomes": m.outcomes,
-                "outcome_prices": m.outcome_prices,
-                "volume": m.volume,
-                "liquidity": m.liquidity,
-                "closed": m.closed,
-                "end_date": m.end_date,
-            }
-            for m in markets
-        ])
+        return _ok([_market_to_dict(m) for m in markets])
     except Exception as e:
         return _err_from(e)
 
