@@ -8,6 +8,7 @@ prices and order books are NEVER cached (always live).
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import datetime, timezone
 
@@ -22,8 +23,8 @@ from pm_trader.models import (
     OrderBookLevel,
 )
 
-GAMMA_BASE = "https://gamma-api.polymarket.com"
-CLOB_BASE = "https://clob.polymarket.com"
+GAMMA_BASE = os.environ.get("POLYMARKET_GAMMA_URL", "https://gamma-api.polymarket.com")
+CLOB_BASE = os.environ.get("POLYMARKET_CLOB_URL", "https://clob.polymarket.com")
 
 CACHE_TTL_SECONDS = 300  # 5 minutes for market metadata
 
